@@ -1,0 +1,20 @@
+#ifndef CONSTANTS_h
+#define CONSTANTS_h
+
+#define DEBUG 1
+
+#define TIME_PULSE_RECV 49
+#define TIME_PULSE_SEND 49 // 48 or 50 = 53us
+
+#define KEY_BREAK 0x80
+#define VALID_KEYCODE 0x80
+
+#define NEXT_KB_CONTROL 0x1
+#define NEXT_KB_ALT_LEFT 0x20
+#define NEXT_KB_ALT_RIGHT 0x40
+#define NEXT_KB_COMMAND_LEFT 0x8
+#define NEXT_KB_COMMAND_RIGHT 0x10
+#define NEXT_KB_SHIFT_LEFT 0x2
+#define NEXT_KB_SHIFT_RIGHT 0x4
+
+#endif
