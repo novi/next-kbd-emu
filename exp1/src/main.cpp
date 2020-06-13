@@ -5,7 +5,8 @@
 #define PIN_FROM_KBD 6
 #define TIME_PULSE_RECV 49
 #define TIME_PULSE_SEND 49 // 48 or 50 = 53us
-
+#define KEY_BREAK 0x80
+#define VALID_KEYCODE 0x80
 
 static uint32_t recvCode;
 
@@ -50,6 +51,7 @@ void sendIdle()
     delayMicroseconds(TIME_PULSE_SEND+4);
   }
   digitalWrite(PIN_FROM_KBD, HIGH);
+  sei();
 }
 
 // data0 = not include start bit
@@ -108,6 +110,7 @@ void loop()
   // }
   RecvMessage message = R_None;
 
+  // wait for start bit
   while(1) {
     if (digitalRead(PIN_TO_KBD) == 0) {
       cli();
@@ -164,11 +167,11 @@ void loop()
       delayMicroseconds(30);
       // actual delay is 256us
       if (isPushed == 0) {
-        sendRawData(0x26, 0x80);
+        sendRawData(0x26, VALID_KEYCODE);
         isPushed = 1;
         Serial.print("0");
       } else if (isPushed == 1){
-        sendRawData(0x26 | 0x80, 0x80);
+        sendRawData(0x26 | KEY_BREAK, VALID_KEYCODE);
         isPushed = 0;
         Serial.print("1");
       }
