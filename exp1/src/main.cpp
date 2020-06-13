@@ -95,7 +95,8 @@ void sendScanCode(uint8_t code, uint8_t modifier)
 }
 
 static uint8_t isPushed = 0;
-static uint32_t resetOk = 0;
+// static uint32_t resetOk = 0;
+static uint32_t resetOk = 1;
 
 void loop()
 {
@@ -147,9 +148,9 @@ void loop()
         Serial.println();
       } else {
         if (recvCode) {
-          Serial.print("unknown:0x");
-          Serial.print(recvCode, HEX);
-          Serial.println();
+          // Serial.print("unknown:0x");
+          // Serial.print(recvCode, HEX);
+          // Serial.println();
         }
       }
       sei();
@@ -157,10 +158,16 @@ void loop()
     }
   }
 
+  // TODO: 
+  message = R_QueryKeyboard;
+
   switch (message) {
     case R_QueryKeyboard:
     if (Serial.available() && resetOk) {
       uint8_t serialData = Serial.read();
+      Serial.print(" 0x");
+      Serial.print(serialData, HEX);
+      Serial.print(" ");
       delayMicroseconds(30);
       // actual delay is 256us
       if (isPushed == 0) {
@@ -185,9 +192,8 @@ void loop()
     sendIdle();
     break;
     case R_Reset:
-    //sendRawData(1, 0);
     resetOk = 1;
-    Serial.println("r");
+    Serial.println("reset");
     break;
     case R_None:
     break;
