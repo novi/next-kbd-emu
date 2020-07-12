@@ -23,6 +23,7 @@ protected:
 	void OnRightButtonUp	(MOUSEINFO *mi);
 	void OnRightButtonDown	(MOUSEINFO *mi);
 };
+
 void MouseRptParser::OnMouseMove(MOUSEINFO *mi)
 {
   mouse_latest_move_x = mi->dX;
@@ -66,7 +67,6 @@ void MouseRptParser::OnRightButtonDown	(MOUSEINFO *mi)
 class KbdRptParser : public KeyboardReportParser
 {
   protected:
-    //void OnControlKeysChanged(uint8_t before, uint8_t after);
     void OnKeyDown	(uint8_t mod, uint8_t key);
     void OnKeyUp	(uint8_t mod, uint8_t key);
 };
@@ -112,7 +112,10 @@ void KbdRptParser::OnKeyDown(uint8_t m, uint8_t key)
 #endif
 }
 
-// void KbdRptParser::OnControlKeysChanged(uint8_t before, uint8_t after) {
+// void KbdRptParser::OnControlKeysChanged(uint8_t before, uint8_t after)
+// {
+
+// }
 
 //   MODIFIERKEYS beforeMod;
 //   *((uint8_t*)&beforeMod) = before;
@@ -160,6 +163,11 @@ void KbdRptParser::OnKeyUp(uint8_t m, uint8_t key)
 #endif
 }
 
+// void KbdRptParser::OnKeyPressed(uint8_t key)
+// {
+
+// }
+
 // -----
 
 
@@ -173,23 +181,62 @@ HIDBoot<USB_HID_PROTOCOL_MOUSE>    HidMouse(&Usb);
 KbdRptParser KbdPrs;
 MouseRptParser MousePrs;
 
+ICACHE_RAM_ATTR void negedgeToKbd()
+{
+  OnRecvStart();
+  detachInterrupt(digitalPinToInterrupt(PIN_TO_KBD));
+}
+
+void attachToKBDInterrupt()
+{
+  attachInterrupt(digitalPinToInterrupt(PIN_TO_KBD), negedgeToKbd, FALLING);
+}
+
+void OnRecvDone()
+{
+  // TODO: send appropriate packet
+  attachToKBDInterrupt(); // wait for next receive
+}
+
 void setup()
 {
-  pinMode(PIN_TO_KBD, INPUT); // to KBD
+  pinMode(PIN_TO_KBD, INPUT_PULLUP); // to KBD
   pinMode(PIN_FROM_KBD, OUTPUT); // from KBD
+  pinMode(PIN_DEBUG_1, OUTPUT);
 
   digitalWrite(PIN_FROM_KBD, HIGH);
 
   Serial.begin(115200);
   Serial.println("kbd emu started.");
+
+  if (Usb.Init() == -1) {
+    Serial.println("OSC did not start.");
+  }
+
+  delay( 200 );
+
+  HidComposite.SetReportParser(0, &KbdPrs);
+  HidComposite.SetReportParser(1, &MousePrs);
+  HidKeyboard.SetReportParser(0, &KbdPrs);
+  HidMouse.SetReportParser(0, &MousePrs);
+
+  attachToKBDInterrupt();
 }
 
 static uint8_t gotReset = 0;
 
 void loop()
 {
-  Usb.Task();
+  while (1) {
+    uint32_t latestData = GetLatestData();
+    if (latestData) {
+      Serial.print("recv data = 0x");
+      Serial.println(latestData, HEX);
+    }
+    Usb.Task();
+  }
 
+/*
   enum RecvMessage message = waitMessage();
 
   switch (message) {
@@ -197,10 +244,10 @@ void loop()
     if (key_code) {
       delayMicroseconds(30);
       // actual delay is 256us
-      sendRawData(key_code, key_modifier | VALID_KEYCODE);
+      SendRawData(key_code, key_modifier | VALID_KEYCODE);
     } else {
       delayMicroseconds(7);
-      sendIdle();
+      SendIdle();
       //Serial.println("idle");
     }
     //Serial.print("k");
@@ -210,12 +257,12 @@ void loop()
     if (mouse_latest_move_y || mouse_latest_move_x ||
     mouse_left_up == 0 || mouse_right_up == 0) {
       delayMicroseconds(7);
-      sendRawData(mouse_left_up | (mouse_latest_move_x << 1),
+      SendRawData(mouse_left_up | (mouse_latest_move_x << 1),
       mouse_right_up | (mouse_latest_move_y << 1)
       );
     } else {
       delayMicroseconds(7);
-      sendIdle();
+      SendIdle();
     }    
     break;
     case R_Reset:
@@ -225,6 +272,6 @@ void loop()
     break;
     case R_None:
     break;
-  }
+  }*/
 
 }
