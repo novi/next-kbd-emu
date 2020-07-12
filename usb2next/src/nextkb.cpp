@@ -6,86 +6,21 @@
 
 enum RecvMessage {
   R_None,
-//  R_Reset,
   R_QueryKeyboard,
   R_QueryMouse
 };
 
-#define RECV_CODE_KEY_QUERY 0x7e20
-#define RECV_CODE_MOUSE_QUERY 0x7e22
+#define RECV_CODE_KEY_QUERY 0x20
+#define RECV_CODE_MOUSE_QUERY 0x22
 #define RECV_CODE_RESET 0xfde
 #define RECV_CODE_LED 0xe00
 #define RECV_CODE_LED_OP_MASK 0x1fff
 #define RECV_CODE_LED_VALUE_SHIFT 13
 
+// TODO: interval
 #define RECV_SCAN_DELAY 53 // 52 ~ 54
-
-
-static void next_kb_delay(unsigned int usec)
-{
-  yield();
-  delayMicroseconds(usec);  
-}
-
-void SendIdle()
-{
-  cli();
-
-  digitalWrite(PIN_FROM_KBD, LOW); // start bit
-  for(uint8_t i = 0; i < 9; i++) {
-    asm("");
-    next_kb_delay(TIME_PULSE_SEND+4);
-  }
-  digitalWrite(PIN_FROM_KBD, HIGH);
-  for(uint8_t i = 0; i < 2; i++) {
-    asm("");
-    next_kb_delay(TIME_PULSE_SEND+4);
-  }
-  digitalWrite(PIN_FROM_KBD, LOW);
-  for(uint8_t i = 0; i < 9; i++) {
-    asm("");
-    next_kb_delay(TIME_PULSE_SEND+4);
-  }
-  digitalWrite(PIN_FROM_KBD, HIGH);
-  sei();
-}
-
-// data0 = not include start bit
-// data1 = not include start bit
-void SendRawData(uint16_t data0, uint16_t data1)
-{
-  cli();
-
-  digitalWrite(PIN_FROM_KBD, LOW); // start bit
-  next_kb_delay(TIME_PULSE_SEND);
-
-  for(uint8_t i = 0; i < 9; i++) {
-    if ( (data0 & 0x1) ) {
-      digitalWrite(PIN_FROM_KBD, HIGH);
-    } else {
-      digitalWrite(PIN_FROM_KBD, LOW);
-    }
-    next_kb_delay(TIME_PULSE_SEND);
-    data0 = data0 >> 1;
-  }
-  digitalWrite(PIN_FROM_KBD, HIGH); // begin 2nd byte
-  next_kb_delay(TIME_PULSE_SEND);
-  digitalWrite(PIN_FROM_KBD, LOW); // start bit
-  next_kb_delay(TIME_PULSE_SEND);
-
-  for(uint8_t i = 0; i < 9; i++) {
-    if ( (data1 & 0x1) ) {
-      digitalWrite(PIN_FROM_KBD, HIGH);
-    } else {
-      digitalWrite(PIN_FROM_KBD, LOW);
-    }
-    next_kb_delay(TIME_PULSE_SEND);
-    data1 = data1 >> 1;
-  }
-  digitalWrite(PIN_FROM_KBD, HIGH);
-
-  sei();
-}
+#define SEND_DELAY (52.9f)
+#define SEND_CODE_IDLE 0x100600
 
 ESP8266Timer ITimer;
 volatile static uint16_t recvData;
@@ -103,26 +38,21 @@ volatile static uint8_t debug1 = 0;
 void ICACHE_RAM_ATTR recvTimerHandler(void)
 {
   if (recvCount == 0) {
-    ITimer.detachInterrupt();
     ITimer.attachInterruptInterval(RECV_SCAN_DELAY, recvTimerHandler);
     recvCount++;
     digitalWrite(PIN_DEBUG_1, debug1); // 53*15=795us
     debug1 = ~debug1;
   } else if (recvCount == 15) {
+    ITimer.detachInterrupt();
     digitalWrite(PIN_DEBUG_1, debug1); // 53*15=795us
     debug1 = ~debug1;
     // end reading data
     recvDataLatest = recvData;
-    ITimer.detachInterrupt();
+    //
     switch(recvData) {
-      case RECV_CODE_MOUSE_QUERY:
-        recvMessage = R_QueryMouse;
-      break;
-      case RECV_CODE_KEY_QUERY:
-        recvMessage = R_QueryKeyboard;
-      break;
       case RECV_CODE_RESET:
         resetDone = true;
+        Serial.println("r");
       break;
       default:
       if ( (recvData & RECV_CODE_LED_OP_MASK) == RECV_CODE_LED) {
@@ -130,7 +60,7 @@ void ICACHE_RAM_ATTR recvTimerHandler(void)
       }
       break;
     }
-    OnRecvDone();
+    OnRecvDone(false);
   } else {
     // digitalWrite(PIN_DEBUG_1, debug1);
     // debug1 = ~debug1;
@@ -139,11 +69,25 @@ void ICACHE_RAM_ATTR recvTimerHandler(void)
     } else {
       recvData |= 0 << recvCount;
     }
+    if (recvCount == 5) {
+      switch(recvData) {
+      case RECV_CODE_MOUSE_QUERY:
+        recvMessage = R_QueryMouse;
+        ITimer.detachInterrupt();
+        OnRecvDone(true);
+        return;
+      case RECV_CODE_KEY_QUERY:
+        recvMessage = R_QueryKeyboard;
+        ITimer.detachInterrupt();
+        OnRecvDone(true);
+        return;
+      }
+    }
     recvCount++;
   }
 }
 
-volatile void OnRecvStart()
+volatile void RecvStart()
 {
   recvData = 0;
   recvCount = 0;
@@ -155,66 +99,79 @@ uint32_t GetLatestData()
 {
   uint32_t v = recvDataLatest;
   recvDataLatest = 0;
-  if (v == RECV_CODE_KEY_QUERY || v == RECV_CODE_MOUSE_QUERY) {
+  if (recvMessage == R_QueryMouse || recvMessage == R_QueryKeyboard || v == RECV_CODE_RESET) {
     return 0;
   }
   return v;
 }
 
-volatile static uint32_t recvCode;
-enum RecvMessage waitMessage()
-{
-  RecvMessage message = R_None;
+//
+volatile static bool hasKeyboardData = false;
+volatile static uint8_t keyboardData[2] = {0, 0};
 
-  // wait for start bit
-  //while(1) {
-    if (digitalRead(PIN_TO_KBD) == 0) {
-      cli();
-      // start bit
-      recvCode = 0;
-      uint8_t i;
-      next_kb_delay(TIME_PULSE_RECV/2);
-      for(i = 0; i < 9; i++) {
-        if (digitalRead(PIN_TO_KBD))
-          recvCode |= 1 << i;
-        else
-          recvCode |= 0 << i;
-        next_kb_delay(TIME_PULSE_RECV);
-      }
-      if ( recvCode == 0x20) {
-        message = R_QueryKeyboard;
-        sei();
-        goto fin;
-      } else if ( recvCode == 0x22) {
-        message = R_QueryMouse;
-        sei();
-        goto fin;
-      }
-      //Serial.println("other");
-      for(; i < 22; i++) {
-        if (digitalRead(PIN_TO_KBD))
-          recvCode |= 1 << i;
-        else
-          recvCode |= 0 << i;
-        next_kb_delay(TIME_PULSE_RECV);
-      }
-      if ( (recvCode & 0xfff) == 0x7de) {
-        //message = R_Reset;
-      } else if ( (recvCode & 0x1fff) == 0xe00) {
-        Serial.print("led:0x");
-        Serial.print(recvCode & 0x6000, HEX);
-        Serial.println();
+volatile static bool hasMouseData = false;
+volatile static uint8_t mouseData[2] = {0, 0};
+
+volatile static uint32_t sendData; 
+volatile static uint8_t sendCount;
+
+void ICACHE_RAM_ATTR sendDataHandler(void)
+{
+  if (sendCount == 21) {
+    ITimer.detachInterrupt();
+
+    digitalWrite(PIN_FROM_KBD, HIGH);
+    OnSendDone();
+    return;
+  }
+  digitalWrite(PIN_FROM_KBD, sendData & 0x01);
+  sendData = sendData >> 1;
+  sendCount++;
+}
+
+void ICACHE_RAM_ATTR sendPrepare(void)
+{
+  timer1_attachInterrupt(sendDataHandler);
+  timer1_write(80.0f*SEND_DELAY);
+  timer1_enable(TIM_DIV1, TIM_EDGE, TIM_LOOP); // DIV1 = 80 ticks/us
+}
+
+volatile void ScheduleSend()
+{
+  ITimer.attachInterruptInterval(370, sendPrepare);
+  sendCount = 0;
+  switch (recvMessage) {
+    case R_QueryKeyboard:
+      if (hasKeyboardData) {
+        
+        hasKeyboardData = false;
       } else {
-        if (recvCode) {
-          Serial.print("unknown:0x");
-          Serial.print(recvCode, HEX);
-          Serial.println();
-        }
+        sendData = SEND_CODE_IDLE;
       }
-      sei();
-      goto fin;
-    }
-  //}
-  fin:
-  return message;
+    break;
+    case R_QueryMouse:
+      if (hasMouseData) {
+        // LSB first
+        sendData = mouseData[0] << 1;
+        sendData |= mouseData[1] << 12;
+        sendData |= 0x400;
+        hasMouseData = false;
+        // Serial.print("will send: 0x");
+        // Serial.println(sendData, HEX);
+      } else {
+        sendData = SEND_CODE_IDLE;
+      }
+    break;
+    default:
+    sendData = 0xffffffff;
+    // sendData = 0xa5a5a5a5;
+    break;
+  }
+}
+
+void SetMouseData(uint8_t data0, uint8_t data1)
+{
+  mouseData[0] = data0;
+  mouseData[1] = data1;
+  hasMouseData = true;
 }

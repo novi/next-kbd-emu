@@ -3,11 +3,13 @@
 
 #include <Arduino.h>
 
-void SendIdle();
-void SendRawData(uint16_t data0, uint16_t data1);
-
-volatile void OnRecvStart();
-extern void OnRecvDone();
+volatile void RecvStart();
+extern void OnRecvDone(bool needResponse);
 uint32_t GetLatestData();
+
+volatile void ScheduleSend();
+extern void OnSendDone();
+
+void SetMouseData(uint8_t data0, uint8_t data1);
 
 #endif

@@ -7,12 +7,21 @@
 #include "pins.h"
 #include "constants.h"
 
+#define MOUSE_SCALE_FACTOR 2
+
 static uint8_t mouse_latest_move_x = 0;
 static uint8_t mouse_latest_move_y = 0;
 static uint8_t mouse_left_up = 1;
 static uint8_t mouse_right_up = 1;
 static uint8_t key_modifier = 0;
 static uint8_t key_code = 0;
+
+inline uint8_t reverse_byte(uint8_t x)
+{
+  x = ((x & 0x55) << 1) | ((x & 0xAA) >> 1);
+  x = ((x & 0x33) << 2) | ((x & 0xCC) >> 2);
+  return (x << 4) | (x >> 4);
+}
 
 class MouseRptParser : public MouseReportParser
 {
@@ -28,13 +37,24 @@ void MouseRptParser::OnMouseMove(MOUSEINFO *mi)
 {
   mouse_latest_move_x = mi->dX;
   mouse_latest_move_y = mi->dY;
+
+  uint8_t d0 = mouse_left_up;
+  d0 |= (-(mi->dX/MOUSE_SCALE_FACTOR)) & 0xfffe;
+  uint8_t d1 = mouse_right_up;
+  d1 |= (-(mi->dY/MOUSE_SCALE_FACTOR)) & 0xfffe;
+
 #if DEBUG
   Serial.print("dx=");
   Serial.print(mi->dX, DEC);
   Serial.print(", dy=");
   Serial.println(mi->dY, DEC);
 #endif
+
+  SetMouseData(d0, d1);
 };
+
+// TODO: implement single mouse click
+
 void MouseRptParser::OnLeftButtonUp	(MOUSEINFO *mi)
 {
   mouse_left_up = 1;
@@ -183,7 +203,7 @@ MouseRptParser MousePrs;
 
 ICACHE_RAM_ATTR void negedgeToKbd()
 {
-  OnRecvStart();
+  RecvStart();
   detachInterrupt(digitalPinToInterrupt(PIN_TO_KBD));
 }
 
@@ -192,9 +212,17 @@ void attachToKBDInterrupt()
   attachInterrupt(digitalPinToInterrupt(PIN_TO_KBD), negedgeToKbd, FALLING);
 }
 
-void OnRecvDone()
+void OnRecvDone(bool needResponse)
 {
-  // TODO: send appropriate packet
+  if (needResponse) {
+    ScheduleSend();
+  } else {
+    attachToKBDInterrupt();
+  }
+}
+
+void OnSendDone()
+{
   attachToKBDInterrupt(); // wait for next receive
 }
 
@@ -223,8 +251,6 @@ void setup()
   attachToKBDInterrupt();
 }
 
-static uint8_t gotReset = 0;
-
 void loop()
 {
   while (1) {
@@ -232,6 +258,7 @@ void loop()
     if (latestData) {
       Serial.print("recv data = 0x");
       Serial.println(latestData, HEX);
+      //while (1); // watch dog reset      
     }
     Usb.Task();
   }
