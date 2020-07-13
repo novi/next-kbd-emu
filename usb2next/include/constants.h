@@ -3,9 +3,6 @@
 
 #define DEBUG 1
 
-#define TIME_PULSE_RECV 49
-#define TIME_PULSE_SEND 49 // 48 or 50 = 53us
-
 #define KEY_BREAK 0x80
 #define VALID_KEYCODE 0x80
 

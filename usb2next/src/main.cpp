@@ -7,21 +7,11 @@
 #include "pins.h"
 #include "constants.h"
 
-#define MOUSE_SCALE_FACTOR 2
+#define MOUSE_MOVE_SCALE_FACTOR 1
 
-static uint8_t mouse_latest_move_x = 0;
-static uint8_t mouse_latest_move_y = 0;
 static uint8_t mouse_left_up = 1;
 static uint8_t mouse_right_up = 1;
 static uint8_t key_modifier = 0;
-static uint8_t key_code = 0;
-
-inline uint8_t reverse_byte(uint8_t x)
-{
-  x = ((x & 0x55) << 1) | ((x & 0xAA) >> 1);
-  x = ((x & 0x33) << 2) | ((x & 0xCC) >> 2);
-  return (x << 4) | (x >> 4);
-}
 
 class MouseRptParser : public MouseReportParser
 {
@@ -35,58 +25,72 @@ protected:
 
 void MouseRptParser::OnMouseMove(MOUSEINFO *mi)
 {
-  mouse_latest_move_x = mi->dX;
-  mouse_latest_move_y = mi->dY;
 
   uint8_t d0 = mouse_left_up;
-  d0 |= (-(mi->dX/MOUSE_SCALE_FACTOR)) & 0xfffe;
+  d0 |= ((-mi->dX/MOUSE_MOVE_SCALE_FACTOR) << 1 ) & 0xfe;
   uint8_t d1 = mouse_right_up;
-  d1 |= (-(mi->dY/MOUSE_SCALE_FACTOR)) & 0xfffe;
+  d1 |= ((-mi->dY/MOUSE_MOVE_SCALE_FACTOR) << 1 ) & 0xfe;
+  SetMouseData(d0, d1);
 
 #if DEBUG
+  Serial.print("rawX=0x");
+  Serial.print(mi->dX, HEX);
+  Serial.print(", -rawX=0x");
+  Serial.print(-mi->dX, HEX);
+  Serial.print(", d0=0x");
+  Serial.println(d0, HEX);
+
   Serial.print("dx=");
   Serial.print(mi->dX, DEC);
   Serial.print(", dy=");
   Serial.println(mi->dY, DEC);
 #endif
-
-  SetMouseData(d0, d1);
-};
-
-// TODO: implement single mouse click
+}
 
 void MouseRptParser::OnLeftButtonUp	(MOUSEINFO *mi)
 {
   mouse_left_up = 1;
+  SetMouseData(mouse_left_up, mouse_right_up);
+
 #if DEBUG
   Serial.println("L Butt Up");
 #endif    
-};
+}
+
 void MouseRptParser::OnLeftButtonDown	(MOUSEINFO *mi)
 {
   mouse_left_up = 0;
+  SetMouseData(mouse_left_up, mouse_right_up);
+
 #if DEBUG
   Serial.println("L Butt Dn");
 #endif
-};
+}
+
 void MouseRptParser::OnRightButtonUp	(MOUSEINFO *mi)
 {
   mouse_right_up = 1;
+  SetMouseData(mouse_left_up, mouse_right_up);
+
 #if DEBUG
   Serial.println("R Butt Up");
 #endif
-};
+}
+
 void MouseRptParser::OnRightButtonDown	(MOUSEINFO *mi)
 {
   mouse_right_up = 0;
+  SetMouseData(mouse_left_up, mouse_right_up);
+
 #if DEBUG
   Serial.println("R Butt Dn");
 #endif
-};
+}
 
 class KbdRptParser : public KeyboardReportParser
 {
   protected:
+    void OnControlKeysChanged(uint8_t before, uint8_t after);
     void OnKeyDown	(uint8_t mod, uint8_t key);
     void OnKeyUp	(uint8_t mod, uint8_t key);
 };
@@ -124,18 +128,28 @@ static void updateModifier(uint8_t m)
 void KbdRptParser::OnKeyDown(uint8_t m, uint8_t key)
 {
   // TODO: convert code
-  key_code = key;
+  uint8_t code = key;
   updateModifier(m);
+
+  SetKeyboardData(code, key_modifier);
+
 #if DEBUG
   Serial.print("key down:0x");
-  Serial.println(key, HEX);
+  Serial.print(key, HEX);
+  Serial.print(", modifier:0x");
+  Serial.println(m, HEX);
 #endif
 }
 
-// void KbdRptParser::OnControlKeysChanged(uint8_t before, uint8_t after)
-// {
-
-// }
+void KbdRptParser::OnControlKeysChanged(uint8_t before, uint8_t after)
+{
+  #if DEBUG
+  Serial.print("mod keys change before:0x");
+  Serial.print(before, HEX);
+  Serial.print(", after:0x");
+  Serial.println(after, HEX);
+#endif
+}
 
 //   MODIFIERKEYS beforeMod;
 //   *((uint8_t*)&beforeMod) = before;
@@ -174,12 +188,16 @@ void KbdRptParser::OnKeyDown(uint8_t m, uint8_t key)
 void KbdRptParser::OnKeyUp(uint8_t m, uint8_t key)
 {
   // TODO: convert code
-  key_code = key | KEY_BREAK;
+  uint8_t code = key | KEY_BREAK;
   updateModifier(m);
+
+  SetKeyboardData(code, key_modifier);
 
 #if DEBUG
   Serial.print("key up:0x");
-  Serial.println(key, HEX);
+  Serial.print(key, HEX);
+  Serial.print(", modifier:0x");
+  Serial.println(m, HEX);
 #endif
 }
 
@@ -230,7 +248,10 @@ void setup()
 {
   pinMode(PIN_TO_KBD, INPUT_PULLUP); // to KBD
   pinMode(PIN_FROM_KBD, OUTPUT); // from KBD
+
+  #if USE_DEBUG_PINS
   pinMode(PIN_DEBUG_1, OUTPUT);
+  #endif
 
   digitalWrite(PIN_FROM_KBD, HIGH);
 
@@ -241,10 +262,10 @@ void setup()
     Serial.println("OSC did not start.");
   }
 
-  delay( 200 );
+  delay(200); // ms
 
-  HidComposite.SetReportParser(0, &KbdPrs);
-  HidComposite.SetReportParser(1, &MousePrs);
+  HidComposite.SetReportParser(1, &KbdPrs);
+  HidComposite.SetReportParser(0, &MousePrs);
   HidKeyboard.SetReportParser(0, &KbdPrs);
   HidMouse.SetReportParser(0, &MousePrs);
 
@@ -258,47 +279,8 @@ void loop()
     if (latestData) {
       Serial.print("recv data = 0x");
       Serial.println(latestData, HEX);
-      //while (1); // watch dog reset      
+      //while (1); // watch dog reset    
     }
     Usb.Task();
   }
-
-/*
-  enum RecvMessage message = waitMessage();
-
-  switch (message) {
-    case R_QueryKeyboard:
-    if (key_code) {
-      delayMicroseconds(30);
-      // actual delay is 256us
-      SendRawData(key_code, key_modifier | VALID_KEYCODE);
-    } else {
-      delayMicroseconds(7);
-      SendIdle();
-      //Serial.println("idle");
-    }
-    //Serial.print("k");
-    break;
-    case R_QueryMouse:
-    //Serial.print("m");
-    if (mouse_latest_move_y || mouse_latest_move_x ||
-    mouse_left_up == 0 || mouse_right_up == 0) {
-      delayMicroseconds(7);
-      SendRawData(mouse_left_up | (mouse_latest_move_x << 1),
-      mouse_right_up | (mouse_latest_move_y << 1)
-      );
-    } else {
-      delayMicroseconds(7);
-      SendIdle();
-    }    
-    break;
-    case R_Reset:
-    //sendRawData(1, 0);
-    gotReset = 1;
-    Serial.println("r");
-    break;
-    case R_None:
-    break;
-  }*/
-
 }

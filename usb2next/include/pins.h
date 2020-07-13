@@ -9,7 +9,9 @@
 
 #define PIN_TO_KBD 4 // Input, IO2 may be OK
 #define PIN_FROM_KBD 16 // Output
+#if USE_DEBUG_PINS
 #define PIN_DEBUG_1 2
+#endif
 
 // ESP8266 configuration
 // IO5 = INT
