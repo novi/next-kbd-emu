@@ -11,7 +11,6 @@
 
 static uint8_t mouse_left_up = 1;
 static uint8_t mouse_right_up = 1;
-static uint8_t key_modifier = 0;
 
 class MouseRptParser : public MouseReportParser
 {
@@ -95,43 +94,54 @@ class KbdRptParser : public KeyboardReportParser
     void OnKeyUp	(uint8_t mod, uint8_t key);
 };
 
-
-static void updateModifier(uint8_t m)
+static uint8_t getNextModifier(uint8_t m)
 {
   MODIFIERKEYS mod;
   *((uint8_t*)&mod) = m;
 
-  key_modifier = VALID_KEYCODE;
+  uint8_t modifier = 0;
   if (mod.bmLeftCtrl || mod.bmRightCtrl) {
-    key_modifier |= NEXT_KB_CONTROL;
+    modifier |= NEXT_KB_CONTROL;
   }
   if (mod.bmLeftShift) {
-    key_modifier |= NEXT_KB_SHIFT_LEFT;
+    modifier |= NEXT_KB_SHIFT_LEFT;
   }
   if (mod.bmRightShift) {
-    key_modifier |= NEXT_KB_SHIFT_RIGHT;
+    modifier |= NEXT_KB_SHIFT_RIGHT;
   }
   if (mod.bmLeftAlt) {
-    key_modifier |= NEXT_KB_ALT_LEFT;
+    modifier |= NEXT_KB_ALT_LEFT;
   }
   if (mod.bmRightAlt) {
-    key_modifier |= NEXT_KB_ALT_RIGHT;
+    modifier |= NEXT_KB_ALT_RIGHT;
   }
   if (mod.bmLeftGUI) {
-    key_modifier |= NEXT_KB_COMMAND_LEFT;
+    modifier |= NEXT_KB_COMMAND_LEFT;
   }
   if (mod.bmRightGUI) {
-    key_modifier |= NEXT_KB_COMMAND_RIGHT;
+    modifier |= NEXT_KB_COMMAND_RIGHT;
   }
+  return modifier;
+}
+
+static uint8_t getNextKeycode(uint8_t hidCode)
+{
+  if (sizeof(usbToNextKeycodes) > hidCode) {
+    uint8_t c = usbToNextKeycodes[hidCode];
+  if (c) return c;
+  }
+  
+  Serial.print("unknown hid key code or unmapped key:0x");
+  Serial.println(hidCode, HEX);
+  return 0;
 }
 
 void KbdRptParser::OnKeyDown(uint8_t m, uint8_t key)
 {
-  // TODO: convert code
-  uint8_t code = key;
-  updateModifier(m);
-
-  SetKeyboardData(code, key_modifier);
+  uint8_t code = getNextKeycode(key);
+  if (code) {
+    SetKeyboardData(code, getNextModifier(m) | VALID_KEYCODE);
+  }
 
 #if DEBUG
   Serial.print("key down:0x");
@@ -143,6 +153,8 @@ void KbdRptParser::OnKeyDown(uint8_t m, uint8_t key)
 
 void KbdRptParser::OnControlKeysChanged(uint8_t before, uint8_t after)
 {
+  SetKeyboardData(KEY_BREAK, getNextModifier(after));
+
   #if DEBUG
   Serial.print("mod keys change before:0x");
   Serial.print(before, HEX);
@@ -187,11 +199,10 @@ void KbdRptParser::OnControlKeysChanged(uint8_t before, uint8_t after)
 
 void KbdRptParser::OnKeyUp(uint8_t m, uint8_t key)
 {
-  // TODO: convert code
-  uint8_t code = key | KEY_BREAK;
-  updateModifier(m);
-
-  SetKeyboardData(code, key_modifier);
+  uint8_t code = getNextKeycode(key);
+  if (code) {
+    SetKeyboardData(code | KEY_BREAK, getNextModifier(m) | VALID_KEYCODE);
+  }
 
 #if DEBUG
   Serial.print("key up:0x");
@@ -270,6 +281,8 @@ void setup()
   HidMouse.SetReportParser(0, &MousePrs);
 
   attachToKBDInterrupt();
+
+  //Serial.println(sizeof(usbToNextKeycodes));
 }
 
 void loop()
