@@ -264,8 +264,8 @@ void setup()
 
   delay(200); // ms
 
-  HidComposite.SetReportParser(1, &KbdPrs);
-  HidComposite.SetReportParser(0, &MousePrs);
+  HidComposite.SetReportParser(0, &KbdPrs);
+  HidComposite.SetReportParser(1, &MousePrs);
   HidKeyboard.SetReportParser(0, &KbdPrs);
   HidMouse.SetReportParser(0, &MousePrs);
 
