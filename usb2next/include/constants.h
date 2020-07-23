@@ -20,8 +20,10 @@ const int8_t mouseAccTable[] = {
     1, // 2
     2, // 3
     2, // 4
-    3, // 5
+    2, // 5
 };
+
+// const int8_t mouseAccTable[] = {};
 
 const uint8_t usbToNextKeycodes[] = {
     0, // 0

@@ -11,8 +11,8 @@
 #define USE_RIGHT_CONTROL_AS_COMMAND 1
 
 // #define USBTYPE_1
-#define USBTYPE_2
-// #define USBTYPE_3
+// #define USBTYPE_2
+#define USBTYPE_3
 
 
 static uint8_t mouse_left_up = 1;
@@ -262,7 +262,7 @@ USBHub     Hub(&Usb);
 HIDBoot < USB_HID_PROTOCOL_KEYBOARD | USB_HID_PROTOCOL_MOUSE > HidComposite0(&Usb);
 
 
-#ifdef USBTYPE_2 || USBTYPE_3
+#ifdef USBTYPE_2
 HIDBoot < USB_HID_PROTOCOL_KEYBOARD | USB_HID_PROTOCOL_MOUSE > HidComposite1(&Usb);
 #endif
 
