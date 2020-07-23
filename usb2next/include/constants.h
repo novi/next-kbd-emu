@@ -1,7 +1,7 @@
 #ifndef CONSTANTS_h
 #define CONSTANTS_h
 
-#define DEBUG 1
+#define DEBUG 0
 
 #define KEY_BREAK 0x80
 #define VALID_KEYCODE 0x80
@@ -13,6 +13,15 @@
 #define NEXT_KB_COMMAND_RIGHT 0x10
 #define NEXT_KB_SHIFT_LEFT 0x2
 #define NEXT_KB_SHIFT_RIGHT 0x4
+
+const int8_t mouseAccTable[] = {
+    0, // 0
+    1, // 1
+    1, // 2
+    2, // 3
+    2, // 4
+    3, // 5
+};
 
 const uint8_t usbToNextKeycodes[] = {
     0, // 0

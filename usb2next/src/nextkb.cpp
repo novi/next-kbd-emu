@@ -83,13 +83,25 @@ void ICACHE_RAM_ATTR recvTimerHandler(void)
       case RECV_CODE_MOUSE_QUERY:
         recvMessage = R_QueryMouse;
         ITimer.detachInterrupt();
+        #if DEBUG
+        //Serial.println("m");
+        #endif
         OnRecvDone(true);
         return;
       case RECV_CODE_KEY_QUERY:
         recvMessage = R_QueryKeyboard;
         ITimer.detachInterrupt();
+        #if DEBUG
+        //Serial.println("k");
+        #endif
         OnRecvDone(true);
         return;
+      default:
+        #if DEBUG
+        Serial.print("unk: 0x");
+        Serial.println(recvData, HEX);
+        #endif
+        break;
       }
     }
     recvCount++;
@@ -191,7 +203,7 @@ void SetKeyboardData(uint8_t data0, uint8_t data1)
   Serial.print(", 0x");
   Serial.println(data0, HEX);
   #endif
-  // hasKeyboardData = true;
+  hasKeyboardData = true;
 }
 
 void SetMouseData(uint8_t data0, uint8_t data1)

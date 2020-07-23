@@ -7,7 +7,13 @@
 #include "pins.h"
 #include "constants.h"
 
-#define MOUSE_MOVE_SCALE_FACTOR 1
+#define MOUSE_MOVE_SCALE_FACTOR 2
+#define USE_RIGHT_CONTROL_AS_COMMAND 1
+
+// #define USBTYPE_1
+#define USBTYPE_2
+// #define USBTYPE_3
+
 
 static uint8_t mouse_left_up = 1;
 static uint8_t mouse_right_up = 1;
@@ -26,9 +32,25 @@ void MouseRptParser::OnMouseMove(MOUSEINFO *mi)
 {
 
   uint8_t d0 = mouse_left_up;
-  d0 |= ((-mi->dX/MOUSE_MOVE_SCALE_FACTOR) << 1 ) & 0xfe;
+  uint8_t absx = mi->dX < 0 ? -mi->dX : mi->dX;
+  int8_t valx;
+  if (sizeof(mouseAccTable) > absx) {
+    valx = mi->dX < 0 ? mouseAccTable[absx] : -mouseAccTable[absx]; // swap sign
+  } else {
+    valx = -(mi->dX/MOUSE_MOVE_SCALE_FACTOR);
+  }
+  d0 |= (valx << 1 ) & 0xfe;
+
+
   uint8_t d1 = mouse_right_up;
-  d1 |= ((-mi->dY/MOUSE_MOVE_SCALE_FACTOR) << 1 ) & 0xfe;
+  uint8_t absy = mi->dY < 0 ? -mi->dY : mi->dY;
+  int8_t valy;
+  if (sizeof(mouseAccTable) > absy) {
+    valy = mi->dY < 0 ? mouseAccTable[absy] : -mouseAccTable[absy]; // swap sign
+  } else {
+    valy = -(mi->dY/MOUSE_MOVE_SCALE_FACTOR);
+  }
+  d1 |= (valy << 1 ) & 0xfe;
   SetMouseData(d0, d1);
 
 #if DEBUG
@@ -36,11 +58,15 @@ void MouseRptParser::OnMouseMove(MOUSEINFO *mi)
   Serial.print(mi->dX, HEX);
   Serial.print(", -rawX=0x");
   Serial.print(-mi->dX, HEX);
+  Serial.print(", absx=0x");
+  Serial.print(absx, HEX);
+  Serial.print(", valx=0x");
+  Serial.print(valx, HEX);
   Serial.print(", d0=0x");
   Serial.println(d0, HEX);
 
-  Serial.print("dx=");
-  Serial.print(mi->dX, DEC);
+  // Serial.print("dx=");
+  // Serial.print(mi->dX, DEC);
   Serial.print(", dy=");
   Serial.println(mi->dY, DEC);
 #endif
@@ -100,9 +126,19 @@ static uint8_t getNextModifier(uint8_t m)
   *((uint8_t*)&mod) = m;
 
   uint8_t modifier = 0;
+#if USE_RIGHT_CONTROL_AS_COMMAND
+  if (mod.bmLeftCtrl) {
+    modifier |= NEXT_KB_CONTROL;
+  }
+  if (mod.bmRightCtrl) {
+    modifier |= NEXT_KB_COMMAND_RIGHT;
+  }
+#else
   if (mod.bmLeftCtrl || mod.bmRightCtrl) {
     modifier |= NEXT_KB_CONTROL;
   }
+#endif
+
   if (mod.bmLeftShift) {
     modifier |= NEXT_KB_SHIFT_LEFT;
   }
@@ -223,9 +259,17 @@ void KbdRptParser::OnKeyUp(uint8_t m, uint8_t key)
 USB     Usb;
 USBHub     Hub(&Usb);
 
-HIDBoot < USB_HID_PROTOCOL_KEYBOARD | USB_HID_PROTOCOL_MOUSE > HidComposite(&Usb);
-HIDBoot<USB_HID_PROTOCOL_KEYBOARD>    HidKeyboard(&Usb);
+HIDBoot < USB_HID_PROTOCOL_KEYBOARD | USB_HID_PROTOCOL_MOUSE > HidComposite0(&Usb);
+
+
+#ifdef USBTYPE_2 || USBTYPE_3
+HIDBoot < USB_HID_PROTOCOL_KEYBOARD | USB_HID_PROTOCOL_MOUSE > HidComposite1(&Usb);
+#endif
+
+// HIDBoot<USB_HID_PROTOCOL_KEYBOARD>    HidKeyboard(&Usb);
+#ifdef USBTYPE_3
 HIDBoot<USB_HID_PROTOCOL_MOUSE>    HidMouse(&Usb);
+#endif
 
 KbdRptParser KbdPrs;
 MouseRptParser MousePrs;
@@ -257,7 +301,7 @@ void OnSendDone()
 
 void setup()
 {
-  pinMode(PIN_TO_KBD, INPUT_PULLUP); // to KBD
+  pinMode(PIN_TO_KBD, INPUT); // to KBD
   pinMode(PIN_FROM_KBD, OUTPUT); // from KBD
 
   #if USE_DEBUG_PINS
@@ -275,10 +319,21 @@ void setup()
 
   delay(200); // ms
 
-  HidComposite.SetReportParser(0, &KbdPrs);
-  HidComposite.SetReportParser(1, &MousePrs);
-  HidKeyboard.SetReportParser(0, &KbdPrs);
+#ifdef USBTYPE_1
+  HidComposite0.SetReportParser(0, &KbdPrs);
+  HidComposite0.SetReportParser(1, &MousePrs);
+#endif
+
+#ifdef USBTYPE_2
+  HidComposite0.SetReportParser(1, &KbdPrs);
+  HidComposite1.SetReportParser(1, &MousePrs);
+#endif
+
+#ifdef USBTYPE_3
+  HidComposite0.SetReportParser(1, &KbdPrs);
   HidMouse.SetReportParser(0, &MousePrs);
+#endif
+
 
   attachToKBDInterrupt();
 
@@ -294,6 +349,7 @@ void loop()
       Serial.println(latestData, HEX);
       //while (1); // watch dog reset    
     }
+    yield();
     Usb.Task();
   }
 }

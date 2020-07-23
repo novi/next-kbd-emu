@@ -1,7 +1,7 @@
 #ifndef PINS_h
 #define PINS_h
 
-#define USE_DEBUG_PINS 1
+#define USE_DEBUG_PINS 0
 
 // https://ht-deko.com/arduino/shield_usbhost_mini.html
 // https://ht-deko.com/arduino/esp-wroom-02.html
